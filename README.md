@@ -1,48 +1,99 @@
-=> Description
-• This project leverages Convolutional Neural Networks (CNN) to classify potato leaf diseases into categories such as Early Blight, Late Blight, and Healthy. It aims to help farmers and researchers detect diseases early using image-based analysis, enhancing agricultural productivity and reducing crop loss.
+# AgroScan
 
-=> Problem Statement
-• Potato crops are vulnerable to various diseases that significantly reduce yield. Manual detection is time-consuming and error-prone. This project automates the detection process using deep learning techniques for faster and more accurate diagnosis.
+AgroScan is a potato leaf disease classification web application built as an end-to-end machine learning product. It allows users to upload a leaf image, sends it to a FastAPI inference service, and returns a prediction for one of three classes:
 
-=> Features
-• Image classification using CNN
-• Trained on the PlantVillage dataset
-• Achieves high accuracy in disease detection
-• Frontend in React, backend in FastAPI
-• TensorFlow Serving is used for model deployment
+- Early Blight
+- Late Blight
+- Healthy
 
-=> Tech Stack
-• Python, TensorFlow, Keras
-• FastAPI (Backend)
-• React.js (Frontend)
-• Google Cloud Storage & TensorFlow Serving
-• Jupyter Notebook (Model Training)
+The goal of the project is to move beyond a notebook-only ML workflow and present a deployable product experience that recruiters and reviewers can try directly in the browser.
 
-=> Dataset
-• Source: PlantVillage Dataset (Potato Leaves)
-  • Classes:
-   • Early Blight
-   • Late Blight
-   • Healthy
+## Highlights
 
-==>> HOW TO RUN
+- Professional React frontend designed for portfolio presentation
+- FastAPI backend for live image inference
+- TensorFlow/Keras model integration
+- Upload preview, confidence score, and clear prediction feedback
+- Environment-based configuration for deployment
+- Ready to split across Vercel frontend and Render backend
 
-=> Backend (FastAPI)
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+## Tech Stack
 
-=> Frontend(React)
+- Frontend: React, CSS, Axios
+- Backend: Python, FastAPI, Uvicorn
+- ML: TensorFlow, Keras, NumPy, Pillow
+- Deployment: Vercel, Render, Docker-ready backend structure
+
+## Project Structure
+
+```text
+frontend/
+  src/
+    App.js
+    App.css
+    index.js
+api/
+  main.py
+  requirements.txt
+  runtime.txt
+saved_models/
+potatoes.h5
+```
+
+## Local Development
+
+### Frontend
+
+```bash
 cd frontend
 npm install
 npm start
+```
 
-=>Model Inference
-•  Upload an image via the UI or test using Postman
-•  Model returns predicted class: Early Blight, Late Blight, or Healthy
+Create a `.env` file in `frontend/`:
 
-=> Model Accuracy
-• Training Accuracy: 98.5%
-• Validation Accuracy: 96.3%
-• Confusion Matrix & loss/accuracy graphs available in notebooks/
- 
+```env
+REACT_APP_API_URL=http://localhost:8000
+```
+
+### Backend
+
+```bash
+cd api
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Optional `.env` values for `api/`:
+
+```env
+ALLOWED_ORIGINS=http://localhost:3000
+# MODEL_PATH=/absolute/path/to/model
+```
+
+## Deployment Plan
+
+### Frontend on Vercel
+
+- Root directory: `frontend`
+- Build command: `npm run build`
+- Output directory: `build`
+- Environment variable: `REACT_APP_API_URL=https://your-render-service.onrender.com`
+
+### Backend on Render
+
+- Root directory: `api`
+- Build command: `pip install -r requirements.txt`
+- Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- Environment variable: `ALLOWED_ORIGINS=https://your-vercel-app.vercel.app`
+
+## Why This Project Stands Out
+
+- It combines computer vision with a real web product workflow
+- It demonstrates frontend, backend, and ML integration in one project
+- It is easy for recruiters to test from a public link
+- It is structured to be deployable instead of staying limited to local notebooks
+
+## Suggested Resume Description
+
+Built and deployed an end-to-end potato leaf disease classification web application using React, FastAPI, TensorFlow, and Docker-ready backend architecture, enabling real-time image upload, inference, and confidence-based prediction.
