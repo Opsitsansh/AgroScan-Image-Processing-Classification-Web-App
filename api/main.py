@@ -1,4 +1,5 @@
 import os
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -36,6 +37,7 @@ app.add_middleware(
 
 model = None
 predict_fn = None
+model_input_dtype = np.float32
 
 
 def resolve_model_path():
@@ -54,20 +56,21 @@ def resolve_model_path():
 
 
 def load_model():
-    global model, predict_fn
+    global model, predict_fn, model_input_dtype
     if model is not None and predict_fn is not None:
-        return model, predict_fn
+        return model, predict_fn, model_input_dtype
 
     model_path = resolve_model_path()
 
     try:
         model = tf.keras.models.load_model(model_path)
+        model_input_dtype = np.float32
 
         def keras_predict(batch):
             return model.predict(batch, verbose=0)
 
         predict_fn = keras_predict
-        return model, predict_fn
+        return model, predict_fn, model_input_dtype
     except Exception:
         loaded = tf.saved_model.load(str(model_path))
         signature = (
@@ -78,18 +81,40 @@ def load_model():
             raise RuntimeError("No compatible serving signature was found in the model.")
 
         model = loaded
+        keyword_inputs = signature.structured_input_signature[1]
+        positional_inputs = signature.structured_input_signature[0]
 
-        def saved_model_predict(batch):
-            output = signature(tf.constant(batch))
-            return list(output.values())[0].numpy()
+        if keyword_inputs:
+            input_name, input_spec = next(iter(keyword_inputs.items()))
+            model_input_dtype = input_spec.dtype.as_numpy_dtype
+
+            def saved_model_predict(batch):
+                tensor = tf.convert_to_tensor(batch, dtype=input_spec.dtype)
+                output = signature(**{input_name: tensor})
+                return list(output.values())[0].numpy()
+
+        elif positional_inputs:
+            input_spec = positional_inputs[0]
+            model_input_dtype = input_spec.dtype.as_numpy_dtype
+
+            def saved_model_predict(batch):
+                tensor = tf.convert_to_tensor(batch, dtype=input_spec.dtype)
+                output = signature(tensor)
+                return list(output.values())[0].numpy()
+
+        else:
+            raise RuntimeError("The SavedModel signature does not expose an input tensor.")
 
         predict_fn = saved_model_predict
-        return model, predict_fn
+        return model, predict_fn, model_input_dtype
 
 
-def read_file_as_image(data) -> np.ndarray:
+def read_file_as_image(data, normalize=True) -> np.ndarray:
     image = Image.open(data).convert("RGB").resize(IMAGE_SIZE)
-    return np.array(image).astype("float32") / 255.0
+    array = np.array(image)
+    if normalize:
+        return array.astype("float32") / 255.0
+    return array.astype("float32")
 
 
 @app.on_event("startup")
@@ -113,16 +138,19 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Please upload a valid image file.")
 
     try:
-        image = read_file_as_image(file.file)
+        _, predictor, input_dtype = load_model()
+        should_normalize = np.issubdtype(input_dtype, np.floating)
+        image = read_file_as_image(file.file, normalize=should_normalize)
         img_batch = np.expand_dims(image, axis=0)
-        _, predictor = load_model()
         prediction = predictor(img_batch)[0]
     except FileNotFoundError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except Exception as error:
+        print(f"Prediction error: {error}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail="Prediction failed. Please try another image.",
+            detail=f"Prediction failed: {error}",
         ) from error
 
     predicted_class = CLASS_NAMES[int(np.argmax(prediction))]
