@@ -47,12 +47,12 @@ def resolve_model_path():
     if configured_path:
         model_path = Path(configured_path).expanduser().resolve()
         if model_path.exists():
-            return model_path
+            return [model_path]
         raise FileNotFoundError(f"Configured MODEL_PATH does not exist: {model_path}")
 
-    for candidate in DEFAULT_MODEL_CANDIDATES:
-        if candidate.exists():
-            return candidate
+    existing_candidates = [candidate for candidate in DEFAULT_MODEL_CANDIDATES if candidate.exists()]
+    if existing_candidates:
+        return existing_candidates
 
     raise FileNotFoundError("No compatible model file was found.")
 
@@ -62,55 +62,68 @@ def load_model():
     if model is not None and predict_fn is not None:
         return model, predict_fn, model_input_dtype
 
-    model_path = resolve_model_path()
+    candidate_paths = resolve_model_path()
+    load_errors = []
 
-    try:
-        model = tf.keras.models.load_model(model_path)
-        if not hasattr(model, "predict"):
-            raise TypeError("Loaded object does not expose a predict method.")
-        model_input_dtype = np.float32
+    for model_path in candidate_paths:
+        try:
+            loaded_model = tf.keras.models.load_model(model_path)
+            if not hasattr(loaded_model, "predict"):
+                raise TypeError("Loaded object does not expose a predict method.")
 
-        def keras_predict(batch):
-            return model.predict(batch, verbose=0)
+            model = loaded_model
+            model_input_dtype = np.float32
 
-        predict_fn = keras_predict
-        return model, predict_fn, model_input_dtype
-    except Exception:
-        loaded = tf.saved_model.load(str(model_path))
-        signature = (
-            loaded.signatures.get("serving_default")
-            or loaded.signatures.get("serve")
-        )
-        if signature is None:
-            raise RuntimeError("No compatible serving signature was found in the model.")
+            def keras_predict(batch):
+                return model.predict(batch, verbose=0)
 
-        model = loaded
-        keyword_inputs = signature.structured_input_signature[1]
-        positional_inputs = signature.structured_input_signature[0]
+            predict_fn = keras_predict
+            print(f"Loaded Keras model from {model_path}")
+            return model, predict_fn, model_input_dtype
+        except Exception as keras_error:
+            load_errors.append(f"Keras load failed for {model_path}: {keras_error}")
 
-        if keyword_inputs:
-            input_name, input_spec = next(iter(keyword_inputs.items()))
-            model_input_dtype = input_spec.dtype.as_numpy_dtype
+        try:
+            loaded = tf.saved_model.load(str(model_path))
+            signature = (
+                loaded.signatures.get("serving_default")
+                or loaded.signatures.get("serve")
+            )
+            if signature is None:
+                raise RuntimeError("No compatible serving signature was found in the model.")
 
-            def saved_model_predict(batch):
-                tensor = tf.convert_to_tensor(batch, dtype=input_spec.dtype)
-                output = signature(**{input_name: tensor})
-                return list(output.values())[0].numpy()
+            model = loaded
+            keyword_inputs = signature.structured_input_signature[1]
+            positional_inputs = signature.structured_input_signature[0]
 
-        elif positional_inputs:
-            input_spec = positional_inputs[0]
-            model_input_dtype = input_spec.dtype.as_numpy_dtype
+            if keyword_inputs:
+                input_name, input_spec = next(iter(keyword_inputs.items()))
+                model_input_dtype = input_spec.dtype.as_numpy_dtype
 
-            def saved_model_predict(batch):
-                tensor = tf.convert_to_tensor(batch, dtype=input_spec.dtype)
-                output = signature(tensor)
-                return list(output.values())[0].numpy()
+                def saved_model_predict(batch):
+                    tensor = tf.convert_to_tensor(batch, dtype=input_spec.dtype)
+                    output = signature(**{input_name: tensor})
+                    return list(output.values())[0].numpy()
 
-        else:
-            raise RuntimeError("The SavedModel signature does not expose an input tensor.")
+            elif positional_inputs:
+                input_spec = positional_inputs[0]
+                model_input_dtype = input_spec.dtype.as_numpy_dtype
 
-        predict_fn = saved_model_predict
-        return model, predict_fn, model_input_dtype
+                def saved_model_predict(batch):
+                    tensor = tf.convert_to_tensor(batch, dtype=input_spec.dtype)
+                    output = signature(tensor)
+                    return list(output.values())[0].numpy()
+
+            else:
+                raise RuntimeError("The SavedModel signature does not expose an input tensor.")
+
+            predict_fn = saved_model_predict
+            print(f"Loaded SavedModel from {model_path}")
+            return model, predict_fn, model_input_dtype
+        except Exception as saved_model_error:
+            load_errors.append(f"SavedModel load failed for {model_path}: {saved_model_error}")
+
+    raise RuntimeError("All model candidates failed to load:\n" + "\n".join(load_errors))
 
 
 def read_file_as_image(data, normalize=True) -> np.ndarray:
