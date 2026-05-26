@@ -11,9 +11,10 @@ from PIL import Image
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_CANDIDATES = [
+    BASE_DIR / "potatoes.h5",
+    BASE_DIR / "training" / "potatoes_saved_model",
     BASE_DIR / "saved_models" / "2",
     BASE_DIR / "saved_models" / "1",
-    BASE_DIR / "potatoes.h5",
 ]
 CLASS_NAMES = ["Early Blight", "Late Blight", "Healthy"]
 IMAGE_SIZE = (256, 256)
