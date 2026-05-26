@@ -11,6 +11,7 @@ from PIL import Image
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_CANDIDATES = [
+    BASE_DIR / "saved_models" / "2",
     BASE_DIR / "saved_models" / "1",
     BASE_DIR / "potatoes.h5",
 ]
@@ -157,6 +158,13 @@ async def predict(file: UploadFile = File(...)):
 
     predicted_class = CLASS_NAMES[int(np.argmax(prediction))]
     confidence = float(np.max(prediction))
+    print(
+        "Prediction scores:",
+        {
+            label: float(score)
+            for label, score in zip(CLASS_NAMES, prediction.tolist())
+        },
+    )
 
     return {"class": predicted_class, "confidence": confidence}
 
