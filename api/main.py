@@ -64,6 +64,8 @@ def load_model():
 
     try:
         model = tf.keras.models.load_model(model_path)
+        if not hasattr(model, "predict"):
+            raise TypeError("Loaded object does not expose a predict method.")
         model_input_dtype = np.float32
 
         def keras_predict(batch):
