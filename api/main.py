@@ -35,6 +35,7 @@ app.add_middleware(
 )
 
 model = None
+predict_fn = None
 
 
 def resolve_model_path():
@@ -53,11 +54,37 @@ def resolve_model_path():
 
 
 def load_model():
-    global model
-    if model is None:
-        model_path = resolve_model_path()
+    global model, predict_fn
+    if model is not None and predict_fn is not None:
+        return model, predict_fn
+
+    model_path = resolve_model_path()
+
+    try:
         model = tf.keras.models.load_model(model_path)
-    return model
+
+        def keras_predict(batch):
+            return model.predict(batch, verbose=0)
+
+        predict_fn = keras_predict
+        return model, predict_fn
+    except Exception:
+        loaded = tf.saved_model.load(str(model_path))
+        signature = (
+            loaded.signatures.get("serving_default")
+            or loaded.signatures.get("serve")
+        )
+        if signature is None:
+            raise RuntimeError("No compatible serving signature was found in the model.")
+
+        model = loaded
+
+        def saved_model_predict(batch):
+            output = signature(tf.constant(batch))
+            return list(output.values())[0].numpy()
+
+        predict_fn = saved_model_predict
+        return model, predict_fn
 
 
 def read_file_as_image(data) -> np.ndarray:
@@ -88,7 +115,8 @@ async def predict(file: UploadFile = File(...)):
     try:
         image = read_file_as_image(file.file)
         img_batch = np.expand_dims(image, axis=0)
-        prediction = load_model().predict(img_batch, verbose=0)[0]
+        _, predictor = load_model()
+        prediction = predictor(img_batch)[0]
     except FileNotFoundError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except Exception as error:
